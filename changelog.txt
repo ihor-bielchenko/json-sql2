@@ -19,4 +19,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Create develop branch.
 - Start changelog.txt file.
 
-[unreleased]: https://github.com/ihor-bielchenko/api-parser/tree/master...HEAD
+[unreleased]: https://github.com/ihor-bielchenko/string-to-sql/tree/master...HEAD
