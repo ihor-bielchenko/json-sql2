@@ -14,12 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Count rows query.
 - Aggregators for where section.
 - Property "baseHaving" in QueryParsedInterface.
-- Conditions of aggregators for having..
+- Conditions of aggregators for having.
 - Tests.
 
 ### Changed
 
 - Rename _whereLoop to _createLoop.
+- Update README.md file.
 
 ## [0.0.2] - 2025-05-06
 
