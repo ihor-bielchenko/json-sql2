@@ -8,6 +8,7 @@ import {
 	isBool,
 	isNum,
 	isExists,
+	toBool,
 } from 'full-utils';
 import {
 	MetadataInterface,
@@ -23,6 +24,7 @@ import {
 export class StringToSqlBuilder {
 	private readonly _parsed: QueryParsedInterface = { baseSelectPrepared: new Set() };
 	private readonly _defaultLimit: number = Number(process.env.STR_TO_SQL_BUILDER_LIMIT ?? 20);
+	private _query: QueryInterface;
 	private _type: string = ``;
 
 	private _createJoins(metadata: RelationMetadataInterface, relations: RelationQueryInterface): string {
@@ -131,7 +133,7 @@ export class StringToSqlBuilder {
 				output.add(`${tableName}.${key} ${orders[key]}`);
 			}
 		}
-		return Array.from(output).join(`, `);
+		return Array.from(output).filter((item) => !!item).join(`, `);
 	}
 
 	private _createGroups(groups: GroupQueryInterface, tableName: string = ``): string {
@@ -149,69 +151,85 @@ export class StringToSqlBuilder {
 				output.add(`${tableName}.${key}`);
 			}
 		}
-		return Array.from(output).join(`, `);
+		return Array.from(output).filter((item) => !!item).join(`, `);
 	}
 
-	private _createWhere(query): string {
+	private _createWhere(query, forHaving: boolean = false): string {
 		if (isArrFilled(query)) {
 			let i = 0,
 				parsed = [];
 
 			while (i < query.length) {
-				parsed.push(this._createWhereArrItem(query[i]));
+				parsed.push(this._createWhereArrItem(query[i], forHaving));
 				i++;
 			}
-			return parsed.join(` OR `);
+			return parsed.filter((item) => !!item).join(` OR `);
 		}
 		let column = ``,
 			output = [];
 
 		for (column in query) {
-			const parsed = this._createWhereItem(column, query[column]);
+			const parsed = this._createWhereItem(column, query[column], forHaving);
 
 			if (isExists(parsed)) {
 				output.push(parsed);
 			}
 		}
-		return output.join(` AND `);
+		return output.filter((item) => !!item).join(` AND `);
 	}
 
-	private _createWhereItem(column: string, value): string {
+	private _createWhereItem(column: string, value, forHaving: boolean = false): string {
 		if (!column.includes(`.`)) {
 			column = `${this._metadata.tableName}.${column}`;
 		}
 		switch (true) {
 			case isStrFilled(value):
-				return this._createWhereItemOperator(column, this.parseOperator(value));
+				return this._createWhereItemOperator(column, this.parseOperator(value), forHaving);
 
-			case isStr(value):
+			case (isStr(value) && !forHaving):
 				return `(${column} = '')`;
 
-			case isStrBool(value):
-			case isBool(value):
-			case isNum(value):
+			case (isStrBool(value) && !forHaving):
+			case (isBool(value) && !forHaving):
+			case (isNum(value) && !forHaving):
 				return `(${column} = ${value})`;
 
 			case isObjFilled(value):
 				const processed = new Set();
 
 				for (let deepColumn in value) {
-					processed.add(this._createWhereItem(`${column.split(`.`).slice(-1)}.${deepColumn}`, value[deepColumn]));
+					processed.add(this._createWhereItem(`${column.split(`.`).slice(-1)}.${deepColumn}`, value[deepColumn], forHaving));
 				}
-				return Array.from(processed).join(` AND `);
+				return Array.from(processed)
+					.filter((item) => !!item)
+					.join(` AND `);
+
+			case isArrFilled(value):
+				return Array.from(value)
+					.map((item) => this._createWhereItem(column, item, forHaving))
+					.filter((item) => !!item)
+					.join(` OR `);
 		}
 		return ``;
 	}
 
-	private _createWhereItemOperator(column: string, data: string): string {
+	private _createWhereItemOperator(column: string, data: string, forHaving: boolean = false): string {
 		const dataProcessed = data.trim();
+
+		if (dataProcessed[0] === `\\`) {
+			return forHaving
+				? ``
+				: `(${column} = '${dataProcessed.slice(1)}')`;
+		}
 		const dataSplitByOperatorParametersStart = dataProcessed.split(`(`);
 		const operatorName = dataSplitByOperatorParametersStart[0];
 
 		if (!(operatorName
 			&& dataSplitByOperatorParametersStart.length > 1
 			&& dataProcessed[dataProcessed.length - 1] === `)`)) {
-			return `(${column} = '${dataProcessed}')`;
+			return forHaving
+				? ``
+				: `(${column} = '${dataProcessed}')`;
 		}
 		const operatorParametersStr = dataSplitByOperatorParametersStart
 			.slice(1)
@@ -219,113 +237,235 @@ export class StringToSqlBuilder {
 			.slice(0, -1);
 		const operatorParameters = this.parseJsonAndTrimQuotes(operatorParametersStr);
 
-		if (!this._parsed.baseGroups) {
-			switch (operatorName) {
-				case `$Max`:
-					return `(${column} = (SELECT MAX(${column}) FROM ${this._metadata.tableName}))`;
-
-				case `$Min`:
-					return `(${column} = (SELECT MIN(${column}) FROM ${this._metadata.tableName}))`;
-
-				case `$Sum`:
-					return `(${column} = (SELECT SUM(${column}) FROM ${this._metadata.tableName}))`;
-
-				case `$Avg`:
-					return `(${column} = (SELECT AVG(${column}) FROM ${this._metadata.tableName}))`;
-
-				case `$Count`:
-					return `(${column} = (SELECT COUNT(${column}) FROM ${this._metadata.tableName}))`;
-
-				case `$Total`:
-					return `(${column} = (SELECT COUNT(*) FROM ${this._metadata.tableName}))`;
-			}
+		if (forHaving) {
+			return this._createWhereOperatorByHaving(operatorName, column, operatorParameters, forHaving);
 		}
+		else if (!this._parsed.baseGroups) {
+			const result = this._createWhereOperatorByGroups(operatorName, column, this._metadata.tableName);
+
+			if (result) {
+				return result;
+			}			
+		}
+		return this._createWhereOperator(operatorName, column, operatorParameters, forHaving);
+	}
+
+	private _createWhereArrItem(queryItem, forHaving: boolean = false): string {
+		if (isArrFilled(queryItem) || isObjFilled(queryItem)) {
+			return this._createWhere(queryItem, forHaving);
+		}
+		return String(queryItem ?? ``);
+	}
+
+	private _createWhereOperator(operatorName: string, column: string, data, forHaving: boolean = false): string {
+		const dataStr = String(data ?? ``);
+
 		switch (operatorName) {
+			case `$Max`:
+			case `$Min`:
+			case `$Sum`:
+			case `$Avg`:
+			case `$Count`:
+			case `$Total`:
+					return ``;
+
+			case '$And':
+				return this._parseOperatorStr(data)
+					.map((item) => this._createWhereItem(column, item, forHaving))
+					.filter((item) => !!item)
+					.join(` AND `);
+
 			case `$Like`:
 			case `$ILike`:
-				return `(LOWER(${column}) LIKE '${operatorParameters}')`;
+				return `(LOWER(${column}) LIKE '${data}')`;
 
 			case `$LessThan`:
-				return `(${column} < '${operatorParameters}')`;
+				return `(${column} < '${data}')`;
 
 			case `$LessThanOrEqual`:
-				return `(${column} <= '${operatorParameters}')`;
+				return `(${column} <= '${data}')`;
 
 			case `$MoreThan`:
-				return `(${column} > '${operatorParameters}')`;
+				return `(${column} > '${data}')`;
 
 			case `$MoreThanOrEqual`:
-				return `(${column} >= '${operatorParameters}')`;
+				return `(${column} >= '${data}')`;
 
 			case `$IsNull`:
 				return `(${column} = '')`;
 
 			case `$Between`:
-				const startValue = isNum(operatorParameters[0])
-					? operatorParameters[0]
-					: `'${operatorParameters[0]}'`;
-				const endValue = isNum(operatorParameters[1])
-					? operatorParameters[1]
-					: `'${operatorParameters[1]}'`;
+				const startValue = isNum(data[0])
+					? data[0]
+					: `'${data[0]}'`;
+				const endValue = isNum(data[1])
+					? data[1]
+					: `'${data[1]}'`;
 
 				return `((${column} >= ${startValue}) AND (${column} <= ${endValue}))`;
 
 			case `$In`:
-				return `(${operatorParameters.map((item) => `(${column} = '${item}')`).join(` OR `)})`;
+				return `(${data
+					.map((item) => `(${column} = '${item}')`)
+					.filter((item) => !!item)
+					.join(` OR `)})`;
 
 			case `$Any`:
-				return `(ANY(ARRAY[${operatorParameters.map((item) => `(${column} = '${item}')`).join(` OR `).join(',')}]))`;
+				return `(ANY(ARRAY[${data
+					.map((item) => `(${column} = '${item}')`)
+					.filter((item) => !!item)
+					.join(` OR `)
+					.join(',')}]))`;
 
 			case `$Not`:
-				if (operatorParametersStr[operatorParametersStr.length - 1] === `)`) {
+				if (dataStr[dataStr.length - 1] === `)`) {
 					switch (0) {
-						case operatorParametersStr.indexOf(`$In(`):
-							return `(${column} NOT IN (${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$In(`, ``).slice(0, -1)).map((item) => `'${item}'`)}))`;
+						case dataStr.indexOf(`$In(`):
+							return `(${column} NOT IN (${this.parseJsonAndTrimQuotes(dataStr.replace(`$In(`, ``).slice(0, -1)).map((item) => `'${item}'`)}))`;
 
-						case operatorParametersStr.indexOf(`$Like(`):
-							return `(${column} NOT LIKE '${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$Like(`, ``).slice(0, -1))}')`;
+						case dataStr.indexOf(`$Like(`):
+							return `(${column} NOT LIKE '${this.parseJsonAndTrimQuotes(dataStr.replace(`$Like(`, ``).slice(0, -1))}')`;
 
-						case operatorParametersStr.indexOf(`$ILike(`):
-							return `(${column} NOT LIKE '${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$ILike(`, ``).slice(0, -1))}')`;
+						case dataStr.indexOf(`$ILike(`):
+							return `(${column} NOT LIKE '${this.parseJsonAndTrimQuotes(dataStr.replace(`$ILike(`, ``).slice(0, -1))}')`;
 
-						case operatorParametersStr.indexOf(`$IsNull(`):
+						case dataStr.indexOf(`$IsNull(`):
 							return `(${column} IS NOT NULL)`;
 
-						case operatorParametersStr.indexOf(`$LessThan(`):
-							return `(${column} NOT < (${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$LessThan(`, ``).slice(0, -1))}))`;
+						case dataStr.indexOf(`$LessThan(`):
+							return `(${column} NOT < (${this.parseJsonAndTrimQuotes(dataStr.replace(`$LessThan(`, ``).slice(0, -1))}))`;
 
-						case operatorParametersStr.indexOf(`$LessThanOrEqual(`):
-							return `(${column} NOT <= (${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$LessThanOrEqual(`, ``).slice(0, -1))}))`;
+						case dataStr.indexOf(`$LessThanOrEqual(`):
+							return `(${column} NOT <= (${this.parseJsonAndTrimQuotes(dataStr.replace(`$LessThanOrEqual(`, ``).slice(0, -1))}))`;
 
-						case operatorParametersStr.indexOf(`$MoreThan(`):
-							return `(${column} NOT > (${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$MoreThan(`, ``).slice(0, -1))}))`;
+						case dataStr.indexOf(`$MoreThan(`):
+							return `(${column} NOT > (${this.parseJsonAndTrimQuotes(dataStr.replace(`$MoreThan(`, ``).slice(0, -1))}))`;
 
-						case operatorParametersStr.indexOf(`$MoreThanOrEqual(`):
-							return `(${column} NOT >= (${this.parseJsonAndTrimQuotes(operatorParametersStr.replace(`$MoreThanOrEqual(`, ``).slice(0, -1))}))`;
+						case dataStr.indexOf(`$MoreThanOrEqual(`):
+							return `(${column} NOT >= (${this.parseJsonAndTrimQuotes(dataStr.replace(`$MoreThanOrEqual(`, ``).slice(0, -1))}))`;
 					}
 				}
-				return `(${column} != '${operatorParameters}')`;
+				return forHaving
+					? ``
+					: `(${column} != '${data}')`;
 		}
-		if (dataProcessed[0] === `\\`) {
-			return `(${column} = '${dataProcessed.slice(1)}')`;
-		}
-		return `(${column} = '${dataProcessed}')`;
+		return forHaving
+			? ``
+			: `(${column} = '${dataStr}')`;
 	}
 
-	private _createWhereArrItem(queryItem): string {
-		if (isArrFilled(queryItem) || isObjFilled(queryItem)) {
-			return this._createWhere(queryItem);
-		}
-		return String(queryItem ?? ``);
-	}
+	private _createWhereOperatorByGroups(operatorName: string, column: string, tableName: string): string {
+		switch (operatorName) {
+			case `$Max`:
+				return `(${column} = (SELECT MAX(${column}) FROM ${tableName}))`;
 
-	private _createHaving(groups: GroupQueryInterface): string {
+			case `$Min`:
+				return `(${column} = (SELECT MIN(${column}) FROM ${tableName}))`;
+
+			case `$Sum`:
+				return `(${column} = (SELECT SUM(${column}) FROM ${tableName}))`;
+
+			case `$Avg`:
+				return `(${column} = (SELECT AVG(${column}) FROM ${tableName}))`;
+
+			case `$Count`:
+				return `(${column} = (SELECT COUNT(${column}) FROM ${tableName}))`;
+
+			case `$Total`:
+				return `(${column} = (SELECT COUNT(*) FROM ${tableName}))`;
+		}
 		return ``;
+	}
+
+	private _createWhereOperatorByHaving(operatorName: string, column: string, data, forHaving: boolean = false): string {
+		switch (operatorName) {
+			case `$Max`:
+				return this._createWhereItem(`MAX(${column})`, data);
+
+			case `$Min`:
+				return this._createWhereItem(`MIN(${column})`, data);
+
+			case `$Sum`:
+				return this._createWhereItem(`SUM${column})`, data);
+
+			case `$Avg`:
+				return this._createWhereItem(`AVG(${column})`, data);
+
+			case `$Count`:
+				return this._createWhereItem(`COUNT(${column})`, data);
+		}
+		return this._createWhereOperator(operatorName, column, data, forHaving);
+	}
+
+	private _parseOperatorStr(input: string): Array<any> {
+		if (input.startsWith(`[`) && input.endsWith(`]`)) {
+			input = input.slice(1, -1);
+		}
+		const result = [];
+		let buffer = ``,
+			i = 0,
+			depth = 0,
+			inQuote = false,
+			quoteChar = null;
+
+		while (i < input.length) {
+			const char = input[i];
+
+			if (inQuote) {
+				buffer += char;
+				
+				if (char === quoteChar && input[i - 1] !== `\\`) {
+					inQuote = false;
+				}
+			} 
+			else if (char === `'` || char === `"`) {
+				inQuote = true;
+				quoteChar = char;
+				buffer += char;
+			} 
+			else if (char === `(`) {
+				depth++;
+				buffer += char;
+			} 
+			else if (char === `)`) {
+				depth--;
+				buffer += char;
+			} 
+			else if (char === `,` && depth === 0 && !inQuote) {
+				result.push(buffer.trim());
+				buffer = ``;
+			} 
+			else {
+				buffer += char;
+			}
+			i++;
+		}
+		if (buffer.trim()) {
+			result.push(buffer.trim());
+		}
+		return result.map(item => {
+			if (item.startsWith(`$`) && item.includes(`(`) && item.endsWith(`)`)) {
+				return item;
+			}
+			if (isStrBool(item)) {
+				return toBool(item);
+			}
+			if (item === `null`) {
+				return null;
+			}
+			if (isNum(item)) {
+				return Number(item);
+			}
+			if ((item.startsWith(`'`) && item.endsWith(`'`)) 
+				|| (item.startsWith(`"`) && item.endsWith(`"`))) {
+				return item.slice(1, -1);
+			}
+			return item;
+		});
 	}
 
 	constructor(
 		private readonly _metadata: MetadataInterface,
-		private readonly _query: QueryInterface,
 	) {
 	}
 
@@ -334,7 +474,9 @@ export class StringToSqlBuilder {
 		return this;
 	}
 
-	find(): StringToSqlBuilder {
+	find(query: QueryInterface): StringToSqlBuilder {
+		this._query = query;
+
 		return this
 			.setType(`find`)
 			.relations()
@@ -346,7 +488,9 @@ export class StringToSqlBuilder {
 			.having();
 	}
 
-	count(): StringToSqlBuilder {
+	count(query: QueryInterface): StringToSqlBuilder {
+		this._query = query;
+
 		return this
 			.setType(`count`)
 			.relations()
@@ -430,10 +574,12 @@ export class StringToSqlBuilder {
 	}
 
 	having(): StringToSqlBuilder {
-		const result = this._createHaving(this._query.groups);
+		if (this._parsed.baseGroups && this._parsed.baseWhere) {
+			const result = this._createWhere(this._query.where, true);
 
-		if (result) {
-			this._parsed[`baseHaving`] = result;
+			if (result) {
+				this._parsed[`baseHaving`] = result;
+			}
 		}
 		return this;
 	}

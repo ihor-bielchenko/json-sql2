@@ -27,7 +27,7 @@ export interface OrderQueryInterface {
 }
 
 export interface WhereQueryInterface {
-	[name: string]: boolean | string | number | null | WhereQueryInterface | Array<WhereQueryInterface>;
+	[name: string]: boolean | string | number | null | WhereQueryInterface | Array<boolean | string | number | null | WhereQueryInterface>;
 }
 
 export interface QueryInterface {

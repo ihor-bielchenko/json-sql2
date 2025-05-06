@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Count rows query.
 - Aggregators for where section.
 - Property "baseHaving" in QueryParsedInterface.
+- Conditions of aggregators for having..
+- Tests.
 
 ### Changed
 
