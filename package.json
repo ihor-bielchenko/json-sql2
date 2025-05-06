@@ -1,6 +1,6 @@
 {
 	"name": "json-sql2",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"description": "A string parser that transforms input of a defined format into structured objects for later use in database queries.",
 	"author": "ihor-bielchenko",
 	"license": "MIT",

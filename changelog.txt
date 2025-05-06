@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2025-05-06
+
+### Added
+
+- Count rows query.
+- Aggregators for where section.
+- Property "baseHaving" in QueryParsedInterface.
+
+### Changed
+
+- Rename _whereLoop to _createLoop.
+
 ## [0.0.2] - 2025-05-06
 
 ### Added
@@ -27,4 +39,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Create develop branch.
 - Start changelog.txt file.
 
-[unreleased]: https://github.com/ihor-bielchenko/json-sql2/tree/master...HEAD
+[unreleased]: https://github.com/ihor-bielchenko/json-sql2/tree/develop...HEAD

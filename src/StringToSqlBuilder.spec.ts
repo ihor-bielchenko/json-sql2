@@ -3,13 +3,13 @@ import { StringToSqlBuilder } from '../src/StringToSqlBuilder';
 describe('Device', () => {
 	it(`Default`, () => {
 		const stringToSqlBuilder = (new StringToSqlBuilder({
-			tableName: `device`,
+			tableName: `user`,
 			relations: {
-				area: {
+				role: {
 					type: `many-to-one`,
-					tableName: `area`,
-					referencedTableName: `device`,
-					referencedColumn: `areaId`,
+					tableName: `role`,
+					referencedTableName: `user`,
+					referencedColumn: `roleId`,
 					primaryColumn: `id`,
 					columns: [{
 						name: `id`,
@@ -17,53 +17,45 @@ describe('Device', () => {
 						name: `name`,
 					}],
 					relations: {
-						rangeips: {
+						role_access: {
 							type: `one-to-many`,
-							tableName: `rangeip`,
-							referencedTableName: `area`,
-							referencedColumn: `areaId`,
+							tableName: `role_access`,
+							referencedTableName: `role`,
+							referencedColumn: `roleId`,
 							primaryColumn: `id`,
 							columns: [{
 								name: `id`,
 							}, {
-								name: `from`,
+								name: `roleId`,
 							}, {
-								name: `to`,
+								name: `accessId`,
 							}],
+							relations: {
+								access: {
+									type: `many-to-one`,
+									tableName: `access`,
+									referencedTableName: `role_access`,
+									referencedColumn: `accessId`,
+									primaryColumn: `id`,
+									columns: [{
+										name: `id`,
+									}, {
+										name: `name`,
+									}],
+								},
+							},
 						},
 					},
-				},
-				model: {
-					type: `many-to-one`,
-					tableName: `model`,
-					referencedTableName: `device`,
-					referencedColumn: `modelId`,
-					primaryColumn: `id`,
-					columns: [{
-						name: `id`,
-					}, {
-						name: `name`,
-					}, {
-						name: `nominalEnergy`,
-					}],
 				},
 			},
 			columns: [{
 				name: `id`,
 			}, {
-				name: `ipaddr`,
-			}, {
-				name: `macaddr`,
-			}, {
 				name: `login`,
 			}, {
-				name: `password`,
+				name: `fullname`,
 			}, {
-				name: `port`,
-			}, {
-				name: `areaId`,
-			}, {
-				name: `modelId`,
+				name: `roleId`,
 			}, {
 				name: `createdAt`,
 			}, {
@@ -71,21 +63,28 @@ describe('Device', () => {
 			}],
 		}, {
 			relations: {
-				area: {
-					rangeips: true,
+				role: {
+					role_access: {
+						access: true,
+					},
 				},
-				model: true,
 			},
 			select: {
 				id: true,
-				ipaddr: true,
-				macaddr: true,
+				login: true,
+				fullname: true,
 				createdAt: true,
 				updatedAt: true,
-				area: {
+				role: {
 					id: true,
-					rangeips: {
-						id: true,
+					name: true,
+					role_access: {
+						roleId: true,
+						accessId: true,
+						access: {
+							id: true,
+							name: true,
+						},
 					},
 				},
 			},
@@ -93,32 +92,35 @@ describe('Device', () => {
 				updatedAt: `DESC`,
 			},
 			where: {
-				areaId: `$Not($Like("example-area-id-1"))`,
-				model: {
-					nominalEnergy: '$Not($In(["hello","hello2"]))',
+				login: `$Not($Like("example-user-login-1"))`,
+				access: {
+					name: '$Not($In(["example-access-name-1","example-access-name-2"]))',
 				},
 			},
 		}));
 
+		console.log('?????????????????????', stringToSqlBuilder.count().toString());
+
 		expect(stringToSqlBuilder.find().toString()).toBe(`SELECT
-	device.id AS device_____id,
-	device.ipaddr AS device_____ipaddr,
-	device.macaddr AS device_____macaddr,
-	device.createdAt AS device_____createdAt,
-	device.updatedAt AS device_____updatedAt,
-	area.id AS area_____id,
-	rangeip.id AS rangeip_____id,
-	model.id AS model_____id,
-	model.name AS model_____name,
-	model.nominalEnergy AS model_____nominalEnergy
-FROM device
-LEFT JOIN area ON device.areaId = area.id
-LEFT JOIN rangeip ON rangeip.areaId = area.id
-LEFT JOIN model ON device.modelId = model.id
+	user.id AS user_____id,
+	user.login AS user_____login,
+	user.fullname AS user_____fullname,
+	user.createdAt AS user_____createdAt,
+	user.updatedAt AS user_____updatedAt,
+	role.id AS role_____id,
+	role.name AS role_____name,
+	role_access.roleId AS role_access_____roleId,
+	role_access.accessId AS role_access_____accessId,
+	access.id AS access_____id,
+	access.name AS access_____name
+FROM user
+LEFT JOIN role ON user.roleId = role.id
+LEFT JOIN role_access ON role_access.roleId = role.id
+LEFT JOIN access ON role_access.accessId = access.id
 WHERE
-	(device.areaId NOT LIKE 'example-area-id-1') AND (model.nominalEnergy NOT IN ('hello','hello2'))
+	(user.login NOT LIKE 'example-user-login-1') AND (access.name NOT IN ('example-access-name-1','example-access-name-2'))
 ORDER BY
-	device.updatedAt DESC
+	user.updatedAt DESC
 LIMIT 0, 20;`);
 	});
 });

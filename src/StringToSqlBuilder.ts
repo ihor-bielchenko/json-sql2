@@ -23,6 +23,7 @@ import {
 export class StringToSqlBuilder {
 	private readonly _parsed: QueryParsedInterface = { baseSelectPrepared: new Set() };
 	private readonly _defaultLimit: number = Number(process.env.STR_TO_SQL_BUILDER_LIMIT ?? 20);
+	private _type: string = ``;
 
 	private _createJoins(metadata: RelationMetadataInterface, relations: RelationQueryInterface): string {
 		let key = ``,
@@ -36,7 +37,8 @@ export class StringToSqlBuilder {
 
 				output.push(`LEFT JOIN ${metadata[key].tableName} ON ${condition}`);
 			}
-			if (isObjFilled(metadata[key].relations)
+			if (metadata[key]
+				&& isObjFilled(metadata[key].relations)
 				&& isObjFilled(relations[key])) {
 				output.push(this._createJoins({ ...metadata[key].relations }, { ...Object(relations[key]) }));
 			}
@@ -150,13 +152,13 @@ export class StringToSqlBuilder {
 		return Array.from(output).join(`, `);
 	}
 
-	private _whereLoop(query): string {
+	private _createWhere(query): string {
 		if (isArrFilled(query)) {
 			let i = 0,
 				parsed = [];
 
 			while (i < query.length) {
-				parsed.push(this._whereLoopArrItem(query[i]));
+				parsed.push(this._createWhereArrItem(query[i]));
 				i++;
 			}
 			return parsed.join(` OR `);
@@ -165,7 +167,7 @@ export class StringToSqlBuilder {
 			output = [];
 
 		for (column in query) {
-			const parsed = this._whereLoopItem(column, query[column]);
+			const parsed = this._createWhereItem(column, query[column]);
 
 			if (isExists(parsed)) {
 				output.push(parsed);
@@ -174,13 +176,13 @@ export class StringToSqlBuilder {
 		return output.join(` AND `);
 	}
 
-	private _whereLoopItem(column: string, value): string {
+	private _createWhereItem(column: string, value): string {
 		if (!column.includes(`.`)) {
 			column = `${this._metadata.tableName}.${column}`;
 		}
 		switch (true) {
 			case isStrFilled(value):
-				return this._whereLoopItemOperator(column, this.parseOperator(value));
+				return this._createWhereItemOperator(column, this.parseOperator(value));
 
 			case isStr(value):
 				return `(${column} = '')`;
@@ -194,14 +196,14 @@ export class StringToSqlBuilder {
 				const processed = new Set();
 
 				for (let deepColumn in value) {
-					processed.add(this._whereLoopItem(`${column.split(`.`).slice(-1)}.${deepColumn}`, value[deepColumn]));
+					processed.add(this._createWhereItem(`${column.split(`.`).slice(-1)}.${deepColumn}`, value[deepColumn]));
 				}
 				return Array.from(processed).join(` AND `);
 		}
 		return ``;
 	}
 
-	private _whereLoopItemOperator(column: string, data: string): string {
+	private _createWhereItemOperator(column: string, data: string): string {
 		const dataProcessed = data.trim();
 		const dataSplitByOperatorParametersStart = dataProcessed.split(`(`);
 		const operatorName = dataSplitByOperatorParametersStart[0];
@@ -217,6 +219,27 @@ export class StringToSqlBuilder {
 			.slice(0, -1);
 		const operatorParameters = this.parseJsonAndTrimQuotes(operatorParametersStr);
 
+		if (!this._parsed.baseGroups) {
+			switch (operatorName) {
+				case `$Max`:
+					return `(${column} = (SELECT MAX(${column}) FROM ${this._metadata.tableName}))`;
+
+				case `$Min`:
+					return `(${column} = (SELECT MIN(${column}) FROM ${this._metadata.tableName}))`;
+
+				case `$Sum`:
+					return `(${column} = (SELECT SUM(${column}) FROM ${this._metadata.tableName}))`;
+
+				case `$Avg`:
+					return `(${column} = (SELECT AVG(${column}) FROM ${this._metadata.tableName}))`;
+
+				case `$Count`:
+					return `(${column} = (SELECT COUNT(${column}) FROM ${this._metadata.tableName}))`;
+
+				case `$Total`:
+					return `(${column} = (SELECT COUNT(*) FROM ${this._metadata.tableName}))`;
+			}
+		}
 		switch (operatorName) {
 			case `$Like`:
 			case `$ILike`:
@@ -289,11 +312,15 @@ export class StringToSqlBuilder {
 		return `(${column} = '${dataProcessed}')`;
 	}
 
-	private _whereLoopArrItem(queryItem): string {
+	private _createWhereArrItem(queryItem): string {
 		if (isArrFilled(queryItem) || isObjFilled(queryItem)) {
-			return this._whereLoop(queryItem);
+			return this._createWhere(queryItem);
 		}
 		return String(queryItem ?? ``);
+	}
+
+	private _createHaving(groups: GroupQueryInterface): string {
+		return ``;
 	}
 
 	constructor(
@@ -302,18 +329,47 @@ export class StringToSqlBuilder {
 	) {
 	}
 
+	setType(type: string): StringToSqlBuilder {
+		this._type = type;
+		return this;
+	}
+
 	find(): StringToSqlBuilder {
 		return this
+			.setType(`find`)
 			.relations()
 			.select()
 			.orders()
 			.groups()
 			.limits()
-			.where();
+			.where()
+			.having();
+	}
+
+	count(): StringToSqlBuilder {
+		return this
+			.setType(`count`)
+			.relations()
+			.select()
+			.orders()
+			.groups()
+			.limits()
+			.where()
+			.having();
 	}
 
 	toString(): string {
-		return `SELECT\n${this._parsed.baseSelect ?? ``}\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseOrders ? `\nORDER BY\n\t${this._parsed.baseOrders}` : ``}\n${this._parsed.baseLimits ? this._parsed.baseLimits : ``};`;
+		switch (this._type) {
+			case `find`:
+				return `SELECT\n${this._parsed.baseSelect ?? ``}\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}${this._parsed.baseOrders ? `\nORDER BY\n\t${this._parsed.baseOrders}` : ``}\n${this._parsed.baseLimits ? this._parsed.baseLimits : ``};`;
+
+			case `count`:
+				if (this._parsed.baseGroups) {
+					return `SELECT\nCOUNT(*) AS total\nFROM (\n\tSELECT\n${this._parsed.baseSelect ?? ``}\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}) grouped;`;
+				}
+				return `SELECT\nCOUNT(DISTINCT ${this._metadata.tableName}.id) AS total\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``};`;
+		}
+		return ``;
 	}
 
 	relations(): StringToSqlBuilder {
@@ -365,10 +421,19 @@ export class StringToSqlBuilder {
 	}
 
 	where(): StringToSqlBuilder {
-		const result = this._whereLoop(this._query.where);
+		const result = this._createWhere(this._query.where);
 
 		if (result) {
 			this._parsed[`baseWhere`] = result;
+		}
+		return this;
+	}
+
+	having(): StringToSqlBuilder {
+		const result = this._createHaving(this._query.groups);
+
+		if (result) {
+			this._parsed[`baseHaving`] = result;
 		}
 		return this;
 	}

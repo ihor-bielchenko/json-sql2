@@ -7,6 +7,7 @@ export interface QueryParsedInterface {
 	baseGroups?: string;
 	baseLimits?: string;
 	baseWhere?: string;
+	baseHaving?: string;
 }
 
 export interface RelationQueryInterface {
