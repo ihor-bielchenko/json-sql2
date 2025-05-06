@@ -1,17 +1,17 @@
 {
-	"name": "string-to-sql",
+	"name": "json-to-sql",
 	"version": "0.0.2",
 	"description": "A string parser that transforms input of a defined format into structured objects for later use in database queries.",
 	"author": "ihor-bielchenko",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+ssh://git@github.com:ihor-bielchenko/string-to-sql.git"
+		"url": "git+ssh://git@github.com:ihor-bielchenko/json-to-sql.git"
 	},
 	"bugs": {
-		"url": "https://github.com/ihor-bielchenko/string-to-sql/issues"
+		"url": "https://github.com/ihor-bielchenko/json-to-sql/issues"
 	},
-	"homepage": "https://github.com/ihor-bielchenko/string-to-sql#readme",
+	"homepage": "https://github.com/ihor-bielchenko/json-to-sql#readme",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"files": [
