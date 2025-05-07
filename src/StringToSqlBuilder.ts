@@ -474,7 +474,7 @@ export class StringToSqlBuilder {
 		return this;
 	}
 
-	find(query: QueryInterface): StringToSqlBuilder {
+	find(query: QueryInterface = {}): StringToSqlBuilder {
 		this._query = query;
 
 		return this
@@ -488,7 +488,7 @@ export class StringToSqlBuilder {
 			.having();
 	}
 
-	count(query: QueryInterface): StringToSqlBuilder {
+	count(query: QueryInterface = {}): StringToSqlBuilder {
 		this._query = query;
 
 		return this
@@ -505,11 +505,11 @@ export class StringToSqlBuilder {
 	toString(): string {
 		switch (this._type) {
 			case `find`:
-				return `SELECT\n${this._parsed.baseSelect ?? ``}\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}${this._parsed.baseOrders ? `\nORDER BY\n\t${this._parsed.baseOrders}` : ``}\n${this._parsed.baseLimits ? this._parsed.baseLimits : ``};`;
+				return `SELECT${this._parsed.baseSelect ? `\n${this._parsed.baseSelect}` : ` *`}\nFROM ${this._metadata.tableName}${this._parsed.baseJoins ? `\n${this._parsed.baseJoins}` : ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}${this._parsed.baseOrders ? `\nORDER BY\n\t${this._parsed.baseOrders}` : ``}\n${this._parsed.baseLimits ? this._parsed.baseLimits : ``};`;
 
 			case `count`:
 				if (this._parsed.baseGroups) {
-					return `SELECT\nCOUNT(*) AS total\nFROM (\n\tSELECT\n${this._parsed.baseSelect ?? ``}\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}) grouped;`;
+					return `SELECT\nCOUNT(*) AS total\nFROM (\n\tSELECT${this._parsed.baseSelect ? `\n${this._parsed.baseSelect}` : ` *`}\nFROM ${this._metadata.tableName}${this._parsed.baseJoins ? `\n${this._parsed.baseJoins}` : ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``}${this._parsed.baseGroups ? `\nGROUP BY\n\t${this._parsed.baseGroups}` : ``}${this._parsed.baseHaving ? `\nHAVING\n\t${this._parsed.baseHaving}` : ``}) grouped;`;
 				}
 				return `SELECT\nCOUNT(DISTINCT ${this._metadata.tableName}.id) AS total\nFROM ${this._metadata.tableName}\n${this._parsed.baseJoins ?? ``}${this._parsed.baseWhere ? `\nWHERE\n\t${this._parsed.baseWhere}` : ``};`;
 		}

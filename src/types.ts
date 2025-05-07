@@ -35,7 +35,7 @@ export interface QueryInterface {
 	select?: SelectQueryInterface;
 	groups?: GroupQueryInterface;
 	orders?: OrderQueryInterface;
-	where?: WhereQueryInterface;
+	where?: WhereQueryInterface | Array<WhereQueryInterface>;
 	offset?: number;
 	skip?: number;
 	take?: number;

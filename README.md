@@ -1,7 +1,7 @@
 # json-sql2
 ## Lightweight utility for converting structured objects into SQL-formatted strings.
 
-The core idea is to rapidly transform specially structured objects into complete and secure SQL queries of any type or complexity. The complexity of the resulting query depends entirely on the structure of the input object.
+The core idea is to rapidly transform specially structured objects into complete and secure SQL queries of any type or complexity. The complexity of the resulting query depends entirely on the structure of the input object. Can be useful for converting network request payloads into SQL queries.
 
 # Quick Start
 ## Install
@@ -11,26 +11,30 @@ npm install json-sql2
 
 ## Basic Usage
 ```javascript
-import { StringToSqlBuilder } from 'json-sql2';
+import { 
+	StringToSqlBuilder,
+	MetadataInterface, 
+} from 'json-sql2';
 
-const metadata: MetadataInterface = metadata_properties;
+// Create builder with database schema.
+const builder = new StringToSqlBuilder(metadata as MetadataInterface);
 
-const builder = new StringToSqlBuilder(metadata);
-const sqlRowsStr = builder.find({
+// Get SQL string for select data.
+const rowsSqlStr = builder.find({
 	relations: {
 		order: true,
 	},
 	select: {
 		id: true,
-		login: true,
 		fullname: true,
 		createdAt: true,
 	},
 	where: {
-		login: `$Like('%manager%')`,
+		fullname: `john smith`,
 		order: {
 			price: `$MoreThan(100)`,
 			product: `$Not($Like('%book%'))`,
+			status: 'Done',
 		},
 	},
 	orders: {
@@ -39,15 +43,18 @@ const sqlRowsStr = builder.find({
 	skip: 0,
 	take: 20,
 }).toString();
-const sqlTotalStr = builder.count({
+
+// Get SQL string for counting data.
+const countSqlStr = builder.count({
 	relations: {
 		order: true,
 	},
 	where: {
-		login: `$Like('%manager%')`,
+		fullname: `john smith`,
 		order: {
 			price: `$MoreThan(100)`,
 			product: `$Not($Like('%book%'))`,
+			status: 'Done',
 		},
 	},
 }).toString();
